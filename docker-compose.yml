@@ -1,0 +1,112 @@
+# Vault + Db2 interactive lab
+# Container orchestration for Vault and Db2 environment
+services:
+  db2:
+    depends_on:
+      vault:
+        condition: service_started
+    image: icr.io/db2_community/db2:latest
+    privileged: true
+    container_name: db2
+    stdin_open: true
+    tty: true
+    pre_stop:
+      - command: /scripts/cleanup.sh
+    restart: unless-stopped
+    hostname: "db2"
+    environment:
+      - LICENSE=accept
+      - DB2INSTANCE=db2inst1
+      - DB2INST1_PASSWORD=passwordPlai4n@Example
+      - DBNAME=
+      - BLU=false
+      - ENABLE_ORACLE_COMPATIBILITY=false
+      - UPDATEAVAIL=NO
+      - TO_CREATE_SAMPLEDB=false
+      - REPODB=false
+      - IS_OSXFS=true
+      - PERSISTENT_HOME=true
+      - HADR_ENABLED=false
+      - ETCD_ENDPOINT=
+      - ETCD_USERNAME=
+      - ETCD_PASSWORD=
+    ports:
+      - "50000:50000"
+    volumes:
+      - ./db2/Docker:/database
+      - ./db2/scripts:/scripts
+    networks:
+      learn_vault:
+        ipv4_address: 172.42.0.20
+  setup:
+    depends_on:
+      vault:
+        condition: service_started
+    image: hashicorp/vault:latest
+    container_name: vault-setup
+    restart: no
+    pre_stop:
+      - command: /scripts/cleanup.sh
+    environment:
+      - VAULT_SKIP_VERIFY=1
+    volumes:
+      - ./vault/scripts:/scripts
+    entrypoint: ["/scripts/vault_setup.sh"]
+    networks:
+      learn_vault:
+        ipv4_address: 172.42.0.50
+  vault:
+    depends_on:
+      mkcert:
+        condition: service_completed_successfully
+    image: hashicorp/vault-enterprise:latest
+    container_name: vault
+    restart: unless-stopped
+    pre_stop:
+      - command: /scripts/cleanup.sh
+    cap_add:
+      - IPC_LOCK
+    command:
+      - vault
+      - server
+      - -config
+      - /vault/config
+      - -log-file
+      - /vault/logs/server.log
+    environment:
+      - VAULT_LOG_LEVEL=error
+      - VAULT_SKIP_VERIFY=1
+      - VAULT_LICENSE=$VAULT_LICENSE_VALUE
+      # KMIP debugging environment variables
+      # - KMIP_CONNECTION_DEBUGGING=1
+      # - KMIP_REQUEST_DEBUGGING=1
+      # - KMIP_RESPONSE_DEBUGGING=1
+      # - KMIP_DECODING_DEBUGGING=1
+      # - KMIP_INDEX_DEBUGGING=1
+    ports:
+      - "8200:8200"
+    volumes:
+      - ./vault/config:/vault/config
+      - ./vault/data/:/vault/data
+      - ./vault/logs:/vault/logs
+      - ./vault/scripts:/scripts
+      - ./vault/tls:/vault/tls
+    networks:
+      learn_vault:
+        ipv4_address: 172.42.0.10
+  mkcert:
+    image: alpine/mkcert
+    container_name: mkcert
+    restart: no
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./vault/tls:/root
+    entrypoint: /bin/sh -c 'mkcert -cert-file=/root/service.pem -key-file=/root/service-key.pem localhost 127.0.0.1 vault ::1 && cat /root/service.pem /root/.local/share/mkcert/rootCA.pem > /root/chain.pem && cp /root/.local/share/mkcert/rootCA.pem /root/ca.pem'
+
+networks:
+  learn_vault:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.42.0.0/24
