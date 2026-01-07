@@ -7,6 +7,7 @@ services:
         condition: service_started
     image: icr.io/db2_community/db2:latest
     privileged: true
+    platform: linux/amd64
     container_name: db2
     stdin_open: true
     tty: true
